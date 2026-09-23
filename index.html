@@ -156,6 +156,16 @@
   .status p{color:var(--text-muted);font-size:14px;margin:0;line-height:1.8;}
   .status.success h2{color:var(--success);}
   .status.fail h2{color:var(--danger);}
+  .whatsapp-cta{
+    margin-top:24px;padding-top:22px;border-top:1px solid rgba(255,255,255,0.1);
+  }
+  .whatsapp-text{color:var(--text-muted);font-size:13.5px;margin:0 0 14px;line-height:1.8;}
+  .whatsapp-btn{
+    display:inline-flex;align-items:center;gap:8px;justify-content:center;
+    width:100%;background:#25D366;color:#0a1830;font-weight:800;font-size:14.5px;
+    text-decoration:none;border-radius:12px;padding:13px;font-family:'Cairo',sans-serif;
+    box-shadow:0 10px 24px rgba(37,211,102,0.2);
+  }
   .retry-btn{
     margin-top:18px;background:transparent;border:1.5px solid rgba(255,255,255,0.2);
     color:var(--text-light);padding:10px 20px;border-radius:10px;cursor:pointer;
@@ -235,6 +245,12 @@
       <div class="icon">✅</div>
       <h2>تم التسجيل بنجاح!</h2>
       <p>هيوصلك الـQR Code على بريدك الإلكتروني قريبًا. متأكد إنك تفتح الإيميل قبل يوم الفعالية.</p>
+      <div class="whatsapp-cta">
+        <p class="whatsapp-text">حبيت تكون من ضمن أسرة رؤية وتعرف كل جديد أول بأول؟ انضم لكومينتي الأسرة على واتساب 👇</p>
+        <a class="whatsapp-btn" href="https://chat.whatsapp.com/H4L5agmgZRT2ZTAWPTuGEi" target="_blank" rel="noopener noreferrer">
+          📱 انضم لكومينتي أسرة رؤية
+        </a>
+      </div>
     </div>
 
     <div class="status" id="statusFail">
@@ -320,13 +336,42 @@ form.addEventListener('submit', async (e)=>{
       body: JSON.stringify(payload)
     });
 
-    if(!res.ok) throw new Error('bad status ' + res.status);
+    // n8n always replies with JSON (success or error), so try to read it
+    // regardless of the HTTP status — that's where the real, specific
+    // message lives (e.g. "الإيميل ده مسجل بالفعل").
+    let data = null;
+    try { data = await res.json(); } catch (parseErr) { data = null; }
 
-    form.style.display = 'none';
-    statusSuccess.classList.add('show');
+    if (res.ok && data && data.status === 'success') {
+      form.style.display = 'none';
+      statusSuccess.classList.add('show');
+
+    } else if (data && data.status === 'error' && data.message) {
+      // A specific, known error from the workflow (duplicate registration, etc.)
+      failMsg.textContent = data.message;
+      statusFail.classList.add('show');
+
+    } else if (!res.ok) {
+      // Server reached us but responded with an error and no readable message
+      failMsg.textContent = `حصلت مشكلة من سيرفر التسجيل (كود ${res.status}). برجاء المحاولة تاني بعد شوية، أو تواصل مع فريق الاستقبال لو استمرت.`;
+      statusFail.classList.add('show');
+
+    } else {
+      // Reached the server, got a 200, but the response shape wasn't what we expected
+      failMsg.textContent = "وصل رد غير متوقع من سيرفر التسجيل. برجاء المحاولة تاني، ولو استمرت المشكلة كلم فريق الاستقبال.";
+      statusFail.classList.add('show');
+    }
+
   }catch(err){
-    failMsg.textContent = "تأكد من اتصالك بالإنترنت وجرّب تاني، أو تواصل مع فريق الاستقبال.";
+    // fetch() itself threw — the request never reached the server at all
+    // (no internet, DNS failure, the webhook is down, or a CORS block)
+    if (err instanceof TypeError) {
+      failMsg.textContent = "مش قادرين نوصل لسيرفر التسجيل خالص. تأكد من اتصالك بالإنترنت، وجرّب تاني بعد شوية.";
+    } else {
+      failMsg.textContent = "حصلت مشكلة غير متوقعة أثناء التسجيل. برجاء المحاولة تاني.";
+    }
     statusFail.classList.add('show');
+    console.error('Registration submit error:', err);
   }finally{
     submitBtn.disabled = false;
     submitBtn.textContent = "تسجيل ✦";
